@@ -1,0 +1,16 @@
+{
+  "name": "codebridge-opener",
+  "displayName": "CodeBridge Opener",
+  "publisher": "taughtful",
+  "version": "0.1.1",
+  "description": "Opens Taughtful CodeBridge lessons inside the IDE's built-in browser, invoked from the codebridge CLI via a URI handler.",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "main": "extension.js",
+  "activationEvents": ["onUri"],
+  "contributes": {
+    "commands": [
+      { "command": "codebridge.open", "title": "CodeBridge: Open lesson in IDE browser" }
+    ]
+  }
+}
