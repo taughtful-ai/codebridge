@@ -195,6 +195,11 @@ async function teach(dryRun) {
     await offerExtension(family);
   }
 
+  // The lesson page's "Send to session" button talks to the local daemon —
+  // make sure one is listening before the lesson opens. Silent and instant
+  // when already running.
+  await ensureDaemon(false);
+
   const meta = await ingestToTaughtful(text, title);
   deliver(`${WEB_BASE}/codebridge/${meta.id}`, `teaching ${scope}`);
   return 0;
@@ -211,12 +216,15 @@ function portOpen() {
   });
 }
 
+async function ensureDaemon(announce) {
+  if (await portOpen()) return;
+  spawn(process.execPath, [path.join(HERE, 'server.mjs'), '--no-open'],
+    { stdio: 'ignore', detached: true }).unref();
+  if (announce) console.log(`codebridge: daemon started on 127.0.0.1:${PORT}`);
+}
+
 async function browse() {
-  if (!(await portOpen())) {
-    spawn(process.execPath, [path.join(HERE, 'server.mjs'), '--no-open'],
-      { stdio: 'ignore', detached: true }).unref();
-    console.log(`codebridge: daemon started on 127.0.0.1:${PORT}`);
-  }
+  await ensureDaemon(true);
   deliver(`http://127.0.0.1:${PORT}`);
   return 0;
 }

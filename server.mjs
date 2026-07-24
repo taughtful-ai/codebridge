@@ -254,6 +254,9 @@ function scanClaudeSessions(limit) {
   return sessions;
 }
 
+/* Deliver an agent-drafted prompt onto THIS machine. Called by the lesson
+   page (taughtful.ai, origin-allowlisted) via /api/cc/deliver.
+
 /* POST the message to Taughtful's ingest as a single text source → doc meta. */
 export async function ingestToTaughtful(text, title) {
   const fd = new FormData();
