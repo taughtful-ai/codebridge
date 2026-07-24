@@ -21,6 +21,10 @@ export const PORT = parseInt(process.env.CODEBRIDGE_PORT || '4519', 10);
 export const API_BASE = (process.env.TAUGHTFUL_API || 'https://elearner-backend.fly.dev').replace(/\/$/, '');
 export const WEB_BASE = (process.env.TAUGHTFUL_WEB || 'https://taughtful.ai').replace(/\/$/, '');
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects');
+// Codex CLI rollouts: ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl.
+// Env override exists for tests and non-standard installs.
+export const CODEX_ROOT = process.env.CODEBRIDGE_CODEX_ROOT
+  || path.join(os.homedir(), '.codex', 'sessions');
 
 const UI_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.html');
 
@@ -74,6 +78,97 @@ export function lastAssistant(file) {
   return { text: '', entry: null };
 }
 
+/* ---- Codex CLI adapter ------------------------------------------------------
+   Rollout line: {timestamp, type, payload}. Schema (from openai/codex test
+   fixtures): session_meta payload carries {id, cwd, ...} on the FIRST line;
+   an assistant message is type:"response_item" payload {type:"message",
+   role:"assistant", content:[{type:"output_text", text}]}. */
+
+function codexEntryText(entry) {
+  const p = entry?.payload;
+  if (entry?.type !== 'response_item' || p?.type !== 'message' || p?.role !== 'assistant') return '';
+  const parts = (p.content || [])
+    .filter((b) => b && b.type === 'output_text')
+    .map((b) => b.text || '')
+    .filter((t) => t.trim());
+  return parts.join('\n\n').trim();
+}
+
+/* First line of a rollout = session_meta. NOT a small line: the payload
+   embeds the full base_instructions system prompt (tens of KB on real
+   sessions), so read expanding chunks until the first newline. */
+export function codexMeta(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const CHUNK = 64 * 1024, MAX = 4 * 1024 * 1024;
+    let buf = Buffer.alloc(0), pos = 0, line = null;
+    while (pos < MAX) {
+      const chunk = Buffer.alloc(CHUNK);
+      const n = fs.readSync(fd, chunk, 0, CHUNK, pos);
+      if (n <= 0) { line = buf; break; }
+      buf = Buffer.concat([buf, chunk.subarray(0, n)]);
+      pos += n;
+      const nl = buf.indexOf(0x0a);
+      if (nl !== -1) { line = buf.subarray(0, nl); break; }
+    }
+    if (!line) return null;
+    const entry = JSON.parse(line.toString('utf8'));
+    return entry?.type === 'session_meta' ? (entry.payload || null) : null;
+  } catch { return null; } finally { fs.closeSync(fd); }
+}
+
+export function codexLastAssistant(file) {
+  const size = fs.statSync(file).size;
+  const fd = fs.openSync(file, 'r');
+  let raw;
+  try {
+    const start = size > TAIL_BYTES ? size - TAIL_BYTES : 0;
+    raw = Buffer.alloc(size - start);
+    fs.readSync(fd, raw, 0, raw.length, start);
+  } finally { fs.closeSync(fd); }
+  let lines = raw.toString('utf8').split('\n');
+  if (size > TAIL_BYTES && lines.length) lines = lines.slice(1);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    const text = codexEntryText(entry);
+    if (text) return { text, entry };
+  }
+  return { text: '', entry: null };
+}
+
+/* Recent rollout files, newest first. Date-named dirs sort lexically =
+   chronologically; only the newest `dayLimit` days are walked. */
+export function codexFiles(dayLimit = 20) {
+  const days = [];
+  try {
+    for (const y of fs.readdirSync(CODEX_ROOT)) {
+      for (const m of fs.readdirSync(path.join(CODEX_ROOT, y))) {
+        for (const d of fs.readdirSync(path.join(CODEX_ROOT, y, m))) {
+          days.push(`${y}/${m}/${d}`);
+        }
+      }
+    }
+  } catch { return []; }
+  days.sort().reverse();
+  const files = [];
+  for (const day of days.slice(0, dayLimit)) {
+    const dir = path.join(CODEX_ROOT, day);
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch { continue; }
+    for (const f of entries) {
+      if (!f.endsWith('.jsonl')) continue;
+      try {
+        files.push({ mtime: fs.statSync(path.join(dir, f)).mtimeMs, day, file: path.join(dir, f) });
+      } catch { /* raced deletion */ }
+    }
+  }
+  files.sort((a, b) => b.mtime - a.mtime);
+  return files;
+}
+
 export function projectLabel(dirname, entry) {
   const cwd = entry?.cwd || '';
   if (cwd) return path.basename(cwd);
@@ -89,6 +184,36 @@ export function sessionFile(dirname, sid) {
 }
 
 export function scanSessions(limit) {
+  const merged = [...scanClaudeSessions(limit), ...scanCodexSessions(limit)];
+  merged.sort((a, b) => b.mtime - a.mtime);
+  return merged.slice(0, limit);
+}
+
+function scanCodexSessions(limit) {
+  const sessions = [];
+  for (const c of codexFiles()) {
+    const meta = codexMeta(c.file);
+    if (!meta) continue;
+    const { text } = codexLastAssistant(c.file);
+    if (!text) continue;
+    sessions.push({
+      source: 'codex',
+      dir: c.day,
+      id: path.basename(c.file, '.jsonl'),
+      project: meta.cwd ? path.basename(meta.cwd) : 'codex',
+      cwd: meta.cwd || '',
+      slug: '',
+      ts: meta.timestamp || '',
+      mtime: c.mtime / 1000,
+      preview: text.slice(0, 280),
+      chars: text.length,
+    });
+    if (sessions.length >= limit) break;
+  }
+  return sessions;
+}
+
+function scanClaudeSessions(limit) {
   const candidates = [];
   if (fs.existsSync(PROJECTS_ROOT)) {
     for (const proj of fs.readdirSync(PROJECTS_ROOT)) {
@@ -113,6 +238,7 @@ export function scanSessions(limit) {
     const { text, entry } = lastAssistant(c.file);
     if (!text) continue;
     sessions.push({
+      source: 'claude',
       dir: c.dir,
       id: path.basename(c.file, '.jsonl'),
       project: projectLabel(c.dir, entry),
@@ -209,11 +335,28 @@ export function createServer() {
       for await (const chunk of req) body += chunk;
       let parsed;
       try { parsed = JSON.parse(body || '{}'); } catch { return sendJson(req, res, 400, { error: 'bad JSON body' }); }
-      const f = sessionFile(parsed.dir || '', parsed.id || '');
-      if (!f) return sendJson(req, res, 404, { error: 'session not found' });
-      const { text, entry } = lastAssistant(f);
-      if (!text) return sendJson(req, res, 404, { error: 'no assistant message in this session' });
-      const title = `Claude Code · ${projectLabel(parsed.dir, entry)}`;
+      let text, title;
+      if (parsed.source === 'codex') {
+        // dir is the date path (YYYY/MM/DD); id the rollout file stem.
+        if (!/^\d{4}\/\d{2}\/\d{2}$/.test(parsed.dir || '') || !SAFE_ID.test(parsed.id || '')) {
+          return sendJson(req, res, 404, { error: 'session not found' });
+        }
+        const f = path.resolve(CODEX_ROOT, parsed.dir, parsed.id + '.jsonl');
+        if (!f.startsWith(path.resolve(CODEX_ROOT)) || !fs.existsSync(f)) {
+          return sendJson(req, res, 404, { error: 'session not found' });
+        }
+        ({ text } = codexLastAssistant(f));
+        if (!text) return sendJson(req, res, 404, { error: 'no assistant message in this session' });
+        const meta = codexMeta(f);
+        title = `Codex · ${meta?.cwd ? path.basename(meta.cwd) : 'session'}`;
+      } else {
+        const f = sessionFile(parsed.dir || '', parsed.id || '');
+        if (!f) return sendJson(req, res, 404, { error: 'session not found' });
+        let entry;
+        ({ text, entry } = lastAssistant(f));
+        if (!text) return sendJson(req, res, 404, { error: 'no assistant message in this session' });
+        title = `Claude Code · ${projectLabel(parsed.dir, entry)}`;
+      }
       try {
         const meta = await ingestToTaughtful(text, title);
         if (!meta.id) return sendJson(req, res, 502, { error: 'ingest returned no doc id' });

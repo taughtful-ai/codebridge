@@ -17,7 +17,8 @@ import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  PORT, PROJECTS_ROOT, WEB_BASE, lastAssistant, projectLabel, ingestToTaughtful, openUrl, scanSessions,
+  PORT, PROJECTS_ROOT, WEB_BASE, lastAssistant, projectLabel, ingestToTaughtful, openUrl,
+  codexFiles, codexMeta, codexLastAssistant,
 } from './server.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -135,26 +136,51 @@ async function teach(dryRun) {
       }
     } catch { /* no projects root */ }
   }
+  // No exact-chat id → newest session for this FOLDER, across both agents:
+  // Claude Code (cwd-munged transcript dir) vs Codex CLI (rollouts whose
+  // session_meta.cwd matches). Newest mtime wins.
+  let kind = 'claude';
   if (!file) {
-    file = newestJsonl([path.join(PROJECTS_ROOT, munge(process.cwd()))]);
     scope = "this project's latest session";
-  }
-  if (!file && fs.existsSync(PROJECTS_ROOT)) {
-    file = newestJsonl(fs.readdirSync(PROJECTS_ROOT).map((d) => path.join(PROJECTS_ROOT, d)));
-    scope = 'your newest session (no session found for this folder)';
+    const cc = newestJsonl([path.join(PROJECTS_ROOT, munge(process.cwd()))]);
+    const ccM = cc ? fs.statSync(cc).mtimeMs : -1;
+    let cx = null, cxM = -1;
+    for (const c of codexFiles(10)) {
+      if (c.mtime <= ccM) break;                    // files are newest-first
+      if (codexMeta(c.file)?.cwd === process.cwd()) { cx = c.file; cxM = c.mtime; break; }
+    }
+    if (cxM > ccM) { file = cx; kind = 'codex'; }
+    else file = cc;
   }
   if (!file) {
-    console.log('codebridge: no Claude Code sessions found under ~/.claude/projects');
+    scope = 'your newest session (no session found for this folder)';
+    const cc = fs.existsSync(PROJECTS_ROOT)
+      ? newestJsonl(fs.readdirSync(PROJECTS_ROOT).map((d) => path.join(PROJECTS_ROOT, d))) : null;
+    const ccM = cc ? fs.statSync(cc).mtimeMs : -1;
+    const cx = codexFiles(10)[0] || null;
+    if (cx && cx.mtime > ccM) { file = cx.file; kind = 'codex'; }
+    else file = cc;
+  }
+  if (!file) {
+    console.log('codebridge: no Claude Code or Codex sessions found');
     return 1;
   }
 
-  const { text, entry } = lastAssistant(file);
+  let text, project;
+  if (kind === 'codex') {
+    ({ text } = codexLastAssistant(file));
+    const meta = codexMeta(file);
+    project = meta?.cwd ? path.basename(meta.cwd) : 'session';
+  } else {
+    let entry;
+    ({ text, entry } = lastAssistant(file));
+    project = text ? projectLabel(path.basename(path.dirname(file)), entry) : '';
+  }
   if (!text) {
     console.log(`codebridge: no assistant message in ${path.basename(file)}`);
     return 1;
   }
-  const project = projectLabel(path.basename(path.dirname(file)), entry);
-  const title = `Claude Code · ${project}`;
+  const title = `${kind === 'codex' ? 'Codex' : 'Claude Code'} · ${project}`;
 
   if (dryRun) {
     console.log(`would teach ${scope}: ${title} (${text.length} chars)`);

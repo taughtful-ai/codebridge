@@ -61,6 +61,11 @@
   .card-main { flex: 1; min-width: 0; }
   .card-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .proj { font-weight: 700; font-size: 15px; }
+  .agent {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--mint); border: 1px solid rgba(143, 201, 171, 0.3); border-radius: 999px;
+    padding: 2px 8px;
+  }
   .when { color: var(--text-dim); font-size: 12.5px; }
   .slug { color: var(--text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 24ch; }
   .preview {
@@ -144,6 +149,7 @@
         '<div class="card-main">' +
           '<div class="card-top">' +
             '<span class="proj">' + esc(s.project) + '</span>' +
+            '<span class="agent">' + (s.source === 'codex' ? 'codex' : 'claude code') + '</span>' +
             '<span class="when">' + ago(s.mtime) + '</span>' +
             (s.slug ? '<span class="slug">' + esc(s.slug) + '</span>' : '') +
           '</div>' +
@@ -164,7 +170,7 @@
       const res = await fetch('/api/cc/teach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: s.dir, id: s.id }),
+        body: JSON.stringify({ dir: s.dir, id: s.id, source: s.source }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || ('teach failed (' + res.status + ')'));

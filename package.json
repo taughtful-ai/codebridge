@@ -1,15 +1,38 @@
 {
   "name": "@taughtful/codebridge",
-  "version": "0.1.0",
-  "description": "Your Claude Code answers, taught out loud. One command turns your coding agent's last answer into a live voice lesson on Taughtful.",
-  "keywords": ["claude-code", "taughtful", "tutor", "voice", "learning", "cli"],
+  "version": "0.2.0",
+  "description": "Your coding agent's answers, taught out loud. One command turns the last thing Claude Code or Codex said into a live voice lesson on Taughtful.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "taughtful",
+    "tutor",
+    "voice",
+    "learning",
+    "cli"
+  ],
   "homepage": "https://taughtful.ai/codebridge",
-  "repository": { "type": "git", "url": "git+https://github.com/taughtful-ai/codebridge.git" },
-  "bugs": { "url": "https://github.com/taughtful-ai/codebridge/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taughtful-ai/codebridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/taughtful-ai/codebridge/issues"
+  },
   "author": "Taughtful, Inc. (https://taughtful.ai)",
   "license": "MIT",
   "type": "module",
-  "bin": { "codebridge": "cli.mjs" },
-  "files": ["cli.mjs", "server.mjs", "index.html", "codebridge-opener-0.1.1.vsix", "README.md"],
-  "engines": { "node": ">=18" }
+  "bin": {
+    "codebridge": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "server.mjs",
+    "index.html",
+    "codebridge-opener-0.1.1.vsix",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
 }

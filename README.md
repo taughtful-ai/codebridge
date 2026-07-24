@@ -1,6 +1,6 @@
 # CodeBridge, by Taughtful
 
-**Your Claude Code answers, taught out loud.**
+**Your coding agent's answers, taught out loud.** Works with Claude Code and OpenAI Codex CLI.
 
 One command turns the last thing your coding agent said into a live lesson on
 [Taughtful](https://taughtful.ai/codebridge): a voice tutor, a drawn board,
@@ -16,6 +16,10 @@ Inside any Claude Code session, after an answer worth understanding:
 
 Zero model tokens, zero clicks. The answer opens as a live lesson at
 `taughtful.ai/codebridge/<id>` and a voice tutor teaches it.
+
+Using Codex CLI? Run `npx @taughtful/codebridge` in a second terminal from your
+project folder, or use `browse` to pick any session. Codex rollouts are read
+from `~/.codex/sessions`.
 
 From any plain terminal:
 
