@@ -96,6 +96,11 @@ function firstRunNotice() {
   console.log('  · sends ONLY the last assistant message of the chosen session to Taughtful');
   console.log('  · as an anonymous, unlisted doc that expires in 48 hours');
   console.log('  · your prompts, tool output, and other sessions never leave this machine');
+  // One-time cross-lane tip: bang users learn the slash lane exists (it has
+  // the native @ file picker that bang lines suppress). Claude Code only.
+  if (process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDECODE) {
+    console.log('  tip: /plugin marketplace add taughtful-ai/codebridge → /codebridge with an @ file picker');
+  }
   try { fs.writeFileSync(FIRSTRUN_MARK, ''); } catch { /* read-only home */ }
   return true;
 }
