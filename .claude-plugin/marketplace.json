@@ -1,0 +1,11 @@
+{
+  "name": "taughtful",
+  "owner": { "name": "Taughtful, Inc.", "url": "https://taughtful.ai" },
+  "plugins": [
+    {
+      "name": "codebridge",
+      "source": "./",
+      "description": "Teach your coding agent's answers out loud — /codebridge turns the last answer (plus @-tagged files) into a live voice lesson on taughtful.ai."
+    }
+  ]
+}

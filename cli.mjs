@@ -119,7 +119,61 @@ function newestJsonl(dirs) {
   return best?.full || null;
 }
 
-async function teach(dryRun) {
+// ---- @file tagging ----------------------------------------------------------
+
+/* Context budget, counted in extracted chars (chars ÷ ~4 ≈ tokens — an honest
+   estimate, not a real token count). Soft warn keeps lessons teachable; the
+   hard cap protects the ingest and the tutor's context. */
+const TAG_SOFT_CHARS = 100_000;
+const TAG_HARD_CHARS = 300_000;
+
+/* Files that must never ride to an anonymous lesson doc, whatever the user
+   typed: secrets go to voice tutors over my dead body. */
+const SENSITIVE = /(^|\/)(\.env[^/]*|.*\.pem|.*\.key|id_rsa[^/]*|.*credentials.*|.*secret.*)$/i;
+
+function looksBinary(buf) {
+  return buf.subarray(0, 8192).includes(0);
+}
+
+/* Resolve @-tagged paths → [{text, title, chars}]. Fail-fast on a missing
+   path (a typo silently dropping context is worse than a re-run), loud-skip
+   on sensitive/binary files. Prints the running meter as it goes. */
+function collectTaggedFiles(tags) {
+  const out = [];
+  let total = 0;
+  for (const tag of tags) {
+    const p = path.resolve(process.cwd(), tag);
+    if (!fs.existsSync(p) || !fs.statSync(p).isFile()) {
+      console.log(`codebridge: @${tag} — no such file (check the path; nothing was sent)`);
+      return null;
+    }
+    if (SENSITIVE.test(p)) {
+      console.log(`codebridge: @${tag} skipped — looks like credentials/secrets, not sending`);
+      continue;
+    }
+    const buf = fs.readFileSync(p);
+    if (looksBinary(buf)) {
+      console.log(`codebridge: @${tag} skipped — binary file`);
+      continue;
+    }
+    const text = buf.toString('utf8');
+    total += text.length;
+    console.log(`codebridge: + ${tag} (${text.length.toLocaleString()} chars · total ${total.toLocaleString()})`);
+    // Title = the path as tagged (relative beats basename: unambiguous in the
+    // lesson outline, and two package.json files can't collide).
+    out.push({ text, title: tag, chars: text.length });
+  }
+  if (total > TAG_HARD_CHARS) {
+    console.log(`codebridge: tagged files total ${total.toLocaleString()} chars — over the ${TAG_HARD_CHARS.toLocaleString()} limit. Tag fewer/smaller files.`);
+    return null;
+  }
+  if (total > TAG_SOFT_CHARS) {
+    console.log(`codebridge: heads up — ${total.toLocaleString()} chars of files (~${Math.round(total / 4 / 1000)}k tokens). Big lessons teach slower.`);
+  }
+  return out;
+}
+
+async function teach(dryRun, tags = []) {
   const isFirst = firstRunNotice();
 
   // Exact chat when the harness exports the session id (`! codebridge`);
@@ -182,9 +236,20 @@ async function teach(dryRun) {
   }
   const title = `${kind === 'codex' ? 'Codex' : 'Claude Code'} · ${project}`;
 
+  // File tagging: explicit @paths only — picking is ALWAYS user-initiated.
+  // (An auto-detect mode existed briefly and taught a .cursorignore file with
+  // a straight face; the user knows what's worth teaching, the transcript
+  // doesn't.)
+  const fileSources = tags.length ? collectTaggedFiles(tags) : [];
+  if (fileSources === null) return 1;
+
   if (dryRun) {
-    console.log(`would teach ${scope}: ${title} (${text.length} chars)`);
+    const fchars = fileSources.reduce((n, s) => n + s.chars, 0);
+    const ktok = ((text.length + fchars) / 4 / 1000).toFixed(1);
+    console.log(`would teach ${scope}: ${title} (${text.length.toLocaleString()} chars`
+      + (fileSources.length ? ` + ${fileSources.length} file(s), ${fchars.toLocaleString()} chars — ~${ktok}k tokens total)` : ')'));
     console.log(`  session: ${file}`);
+    for (const s of fileSources) console.log(`  file:    ${s.title} (${s.chars.toLocaleString()} chars)`);
     console.log(`  starts:  ${text.trim().split('\n')[0].slice(0, 100)}`);
     return 0;
   }
@@ -200,8 +265,12 @@ async function teach(dryRun) {
   // when already running.
   await ensureDaemon(false);
 
-  const meta = await ingestToTaughtful(text, title);
-  deliver(`${WEB_BASE}/codebridge/${meta.id}`, `teaching ${scope}`);
+  const meta = await ingestToTaughtful([
+    { text, title },
+    ...fileSources,
+  ]);
+  deliver(`${WEB_BASE}/codebridge/${meta.id}`,
+    `teaching ${scope}${fileSources.length ? ` + ${fileSources.length} file(s)` : ''}`);
   return 0;
 }
 
@@ -235,13 +304,15 @@ const args = process.argv.slice(2);
 let code;
 if (args.includes('-h') || args.includes('--help') || args[0] === 'help') {
   console.log('codebridge — teach your last Claude Code answer on Taughtful\n');
-  console.log('  codebridge             teach the latest answer (this chat, or this folder)');
-  console.log('  codebridge --dry-run   show what would be taught, send nothing');
-  console.log('  codebridge browse      the session picker (starts the local daemon)');
+  console.log('  codebridge               teach the latest answer (this chat, or this folder)');
+  console.log('  codebridge @src/x.js     also teach specific files (repeatable)');
+  console.log('  codebridge --dry-run     show what would be taught, send nothing');
+  console.log('  codebridge browse        the session picker (starts the local daemon)');
   code = 0;
 } else if (args[0] === 'browse') {
   code = await browse();
 } else {
-  code = await teach(args.includes('--dry-run'));
+  const tags = args.filter((a) => a.startsWith('@')).map((a) => a.slice(1));
+  code = await teach(args.includes('--dry-run'), tags);
 }
 process.exit(code);

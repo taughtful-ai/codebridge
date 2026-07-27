@@ -21,6 +21,17 @@ Using Codex CLI? Run `npx @taughtful/codebridge` in a second terminal from your
 project folder, or use `browse` to pick any session. Codex rollouts are read
 from `~/.codex/sessions`.
 
+Tag files into the lesson — the tutor teaches them alongside the answer:
+
+```
+! codebridge @src/auth.js @docs/design.md
+```
+
+You pick the files; nothing is auto-included. A char/context meter prints as
+each file resolves; secrets (`.env`, keys, credentials) are refused, binaries
+skipped, and a mistyped path aborts the run instead of teaching partial
+context.
+
 From any plain terminal:
 
 ```bash

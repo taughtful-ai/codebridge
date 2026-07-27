@@ -254,13 +254,16 @@ function scanClaudeSessions(limit) {
   return sessions;
 }
 
-/* Deliver an agent-drafted prompt onto THIS machine. Called by the lesson
-   page (taughtful.ai, origin-allowlisted) via /api/cc/deliver.
-
-/* POST the message to Taughtful's ingest as a single text source → doc meta. */
-export async function ingestToTaughtful(text, title) {
+/* POST to Taughtful's ingest → doc meta. `sources` is an ordered list of
+   {text, title}: the session answer first, then any @-tagged files — each
+   becomes its own source, and the docs pipeline sections the whole set into
+   ONE lesson (the same stacked-context idea as VB context_blocks, applied one
+   layer up where the two-tier doc machinery already handles size). */
+export async function ingestToTaughtful(sources) {
   const fd = new FormData();
-  fd.append('manifest', JSON.stringify([{ type: 'text', text, title }]));
+  fd.append('manifest', JSON.stringify(
+    sources.map(({ text, title }) => ({ type: 'text', text, title })),
+  ));
   const res = await fetch(API_BASE + '/api/docs/ingest-multi', { method: 'POST', body: fd });
   if (!res.ok) {
     let detail = '';

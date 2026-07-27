@@ -1,0 +1,10 @@
+{
+  "name": "codebridge",
+  "version": "0.3.0",
+  "description": "Teach your coding agent's answers out loud. /codebridge turns the last answer (plus @-tagged files) into a live voice lesson on Taughtful.",
+  "author": { "name": "Taughtful, Inc.", "url": "https://taughtful.ai" },
+  "homepage": "https://taughtful.ai/codebridge",
+  "repository": "https://github.com/taughtful-ai/codebridge",
+  "license": "MIT",
+  "keywords": ["tutor", "voice", "learning", "claude-code", "codex"]
+}
