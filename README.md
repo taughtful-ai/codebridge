@@ -9,7 +9,8 @@ and room to ask why.
 
 ## Use
 
-In Claude Code or the Codex TUI, after an answer worth understanding:
+In Claude Code or the Codex TUI, after an answer worth understanding (needs
+the CLI on PATH — `npm i -g @taughtful/codebridge`, see Install):
 
 ```
 ! codebridge
@@ -45,13 +46,17 @@ codex plugin marketplace add taughtful-ai/codebridge
 codex plugin add codebridge@taughtful
 ```
 
-**Raw CLI, any terminal** (no install; this is also what the plugin runs):
+**The CLI** (what powers the `! codebridge` bang inside sessions):
 
 ```bash
-npx @taughtful/codebridge            # teach this project's latest answer
-npx @taughtful/codebridge browse     # pick from your recent sessions (both agents)
-npx @taughtful/codebridge --dry-run  # show what would be taught, send nothing
+npm i -g @taughtful/codebridge       # puts `codebridge` on PATH → ! codebridge works
+codebridge                           # teach this project's latest answer
+codebridge browse                    # pick from your recent sessions (both agents)
+codebridge --dry-run                 # show what would be taught, send nothing
 ```
+
+Or try it once with no install: `npx @taughtful/codebridge` (the plugins use
+this fallback too, so they work without the global install).
 
 Codex note: Codex runs shell commands in a network-blocked sandbox; approve
 the escalated run when it asks, since teaching uploads the lesson.
