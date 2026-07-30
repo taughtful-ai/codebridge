@@ -46,6 +46,9 @@ codex plugin marketplace add taughtful-ai/codebridge
 codex plugin add codebridge@taughtful
 ```
 
+Restart your agent once after installing (plugins register at startup) —
+`/codebridge` and `$codebridge` are there in every session after.
+
 **The CLI** (what powers the `! codebridge` bang inside sessions):
 
 ```bash
