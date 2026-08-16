@@ -67,15 +67,52 @@ export function lastAssistant(file) {
   }
   let lines = raw.toString('utf8').split('\n');
   if (size > TAIL_BYTES && lines.length) lines = lines.slice(1);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
+  // Forward-parse into ordered (role, text) turns. When the LAST user entry is
+  // the codebridge invocation itself (slash command, bang line), the runner's
+  // own post-command chatter ("No files tagged, running plain.") is the newest
+  // assistant text — and must NOT be taught. Anchor to the answer BEFORE the
+  // invocation instead. Any other last-user shape keeps today's behavior.
+  const turns = [];
+  for (const lineRaw of lines) {
+    const line = lineRaw.trim();
     if (!line) continue;
     let entry;
     try { entry = JSON.parse(line); } catch { continue; }
-    const text = entryText(entry);
-    if (text) return { text, entry };
+    const a = entryText(entry);
+    if (a) { turns.push({ role: 'a', text: a, entry }); continue; }
+    const u = userEntryText(entry);
+    if (u) turns.push({ role: 'u', text: u });
+  }
+  let lastUser = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === 'u') { lastUser = i; break; }
+  }
+  const cutoff = (lastUser >= 0 && CC_INVOKED_RE.test(turns[lastUser].text))
+    ? lastUser : turns.length;
+  for (let i = cutoff - 1; i >= 0; i--) {
+    if (turns[i].role === 'a') return { text: turns[i].text, entry: turns[i].entry };
   }
   return { text: '', entry: null };
+}
+
+/* The invocation shapes a user entry can carry in a Claude Code transcript:
+   a slash-command run (<command-…> markup), a bang line (<bash-input> markup),
+   or a typed command line (! codebridge / /codebridge / npx @taughtful/…). */
+const CC_INVOKED_RE = new RegExp(
+  '<bash-input>[^<]*\\bcodebridge\\b|<command-[^>]*>[^<]*\\bcodebridge\\b'
+  + '|(^|\\n)\\s*[!/$]\\s*(npx\\s+(-y\\s+)?@taughtful/)?codebridge\\b', 'i');
+
+/* Plain-text of a USER entry (real typed turns only): tool_result blocks ride
+   as user-role entries in CC transcripts — the text filter drops them. */
+function userEntryText(entry) {
+  if (entry?.type !== 'user' || entry?.isSidechain) return '';
+  const c = entry?.message?.content;
+  if (typeof c === 'string') return c.trim();
+  if (Array.isArray(c)) {
+    return c.filter((b) => b && b.type === 'text').map((b) => b.text || '')
+      .join('\n').trim();
+  }
+  return '';
 }
 
 /* ---- Codex CLI adapter ------------------------------------------------------
@@ -128,13 +165,30 @@ export function codexLastAssistant(file) {
   } finally { fs.closeSync(fd); }
   let lines = raw.toString('utf8').split('\n');
   if (size > TAIL_BYTES && lines.length) lines = lines.slice(1);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
+  // Same invocation-anchoring as the Claude path (see lastAssistant): if the
+  // last user message invokes codebridge ($codebridge, or the skill matched on
+  // the word), teach the answer BEFORE it, never the runner's own chatter.
+  const turns = [];
+  for (const lineRaw of lines) {
+    const line = lineRaw.trim();
     if (!line) continue;
     let entry;
     try { entry = JSON.parse(line); } catch { continue; }
-    const text = codexEntryText(entry);
-    if (text) return { text, entry };
+    const a = codexEntryText(entry);
+    if (a) { turns.push({ role: 'a', text: a, entry }); continue; }
+    const p = entry?.payload;
+    if (entry?.type === 'event_msg' && p?.type === 'user_message' && p?.message) {
+      turns.push({ role: 'u', text: String(p.message) });
+    }
+  }
+  let lastUser = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === 'u') { lastUser = i; break; }
+  }
+  const cutoff = (lastUser >= 0 && /\bcodebridge\b/i.test(turns[lastUser].text))
+    ? lastUser : turns.length;
+  for (let i = cutoff - 1; i >= 0; i--) {
+    if (turns[i].role === 'a') return { text: turns[i].text, entry: turns[i].entry };
   }
   return { text: '', entry: null };
 }

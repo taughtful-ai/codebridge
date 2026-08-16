@@ -14,6 +14,9 @@ Rules:
   the project root. No files tagged → no arguments.
 - Run via Bash: `codebridge @<path1> @<path2> ...` if `codebridge` is on PATH,
   otherwise `npx -y @taughtful/codebridge @<path1> @<path2> ...`.
-- Run it immediately. Do not analyze the files, do not summarize them, do not
-  add flags the user didn't ask for.
+- Run it as your FIRST action — output NOTHING before the command. Any text
+  you write first becomes the transcript's newest assistant message and the
+  lesson would teach YOUR preamble instead of the real answer.
+- Do not analyze the files, do not summarize them, do not add flags the
+  user didn't ask for.
 - Reply with ONLY the lesson URL line from the CLI output. No commentary.
