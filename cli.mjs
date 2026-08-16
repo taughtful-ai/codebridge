@@ -295,6 +295,21 @@ async function teach(dryRun, tags = []) {
   const fileSources = tags.length ? collectTaggedFiles(tags) : [];
   if (fileSources === null) return 1;
 
+  // CONTENT FLOOR — hard block under MIN_WORDS (answer + tagged files
+  // combined). Nothing leaves the machine, no ingest LLM call is spent, and
+  // the block doubles as a NEW usage lane: the second line tells the agent to
+  // ask its human WHAT they want taught, write that piece to a file, and
+  // re-run with @file — agent-curated lessons via the tagging door.
+  const MIN_WORDS = parseInt(process.env.CODEBRIDGE_MIN_WORDS || '200', 10);
+  const words = (s) => String(s).split(/\s+/).filter(Boolean).length;
+  const totalWords = words(text) + fileSources.reduce((n, s) => n + words(s.text), 0);
+  if (totalWords < MIN_WORDS) {
+    console.log(`codebridge: too little to teach — ${totalWords} words selected (floor: ${MIN_WORDS})`);
+    console.log('codebridge: (agent: ask your human which part or topic they want taught, '
+      + 'write that content to a file, then run: codebridge @that-file)');
+    return 1;
+  }
+
   if (dryRun) {
     const fchars = fileSources.reduce((n, s) => n + s.chars, 0);
     const ktok = ((text.length + fchars) / 4 / 1000).toFixed(1);
