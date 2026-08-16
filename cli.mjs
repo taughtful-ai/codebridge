@@ -22,6 +22,46 @@ import {
 } from './server.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version;
+const UPDATE_CACHE = path.join(os.homedir(), '.codebridge-updatecheck');
+
+// ---- update notice ----------------------------------------------------------
+/* One extra line, at most, addressed to BOTH readers of this terminal — the
+   human and their agent. Checked against the npm registry at most once per
+   day (cached), fetched best-effort with a hard timeout, and NEVER allowed to
+   block or fail a teach. Mint-colored on real TTYs; plain in captured output. */
+
+const newerThan = (a, b) => {           // semver-ish: is a newer than b
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+  return false;
+};
+
+async function latestVersion() {
+  if (process.env.CODEBRIDGE_LATEST_OVERRIDE) return process.env.CODEBRIDGE_LATEST_OVERRIDE;
+  try {                                  // fresh-enough cache → no network at all
+    const c = JSON.parse(fs.readFileSync(UPDATE_CACHE, 'utf8'));
+    if (Date.now() - c.ts < 24 * 3600 * 1000) return c.latest;
+  } catch { /* no cache yet */ }
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch('https://registry.npmjs.org/@taughtful/codebridge/latest',
+      { signal: ctl.signal });
+    clearTimeout(timer);
+    const latest = (await r.json()).version;
+    try { fs.writeFileSync(UPDATE_CACHE, JSON.stringify({ ts: Date.now(), latest })); } catch { /* ro home */ }
+    return latest;
+  } catch { return null; }               // offline / slow: silence, never noise
+}
+
+function printUpdateNotice(latest) {
+  if (!latest || !newerThan(latest, PKG_VERSION)) return;
+  const line = `codebridge: NEW UPDATE v${latest} available (you run v${PKG_VERSION}) — `
+    + 'human: npm i -g @taughtful/codebridge · agent: you may run that update for your human';
+  console.log(process.stdout.isTTY ? `\x1b[38;5;115m${line}\x1b[0m` : line);
+}
+
 const FIRSTRUN_MARK = path.join(os.homedir(), '.codebridge-firstrun');
 const VSIX = path.join(HERE, 'codebridge-opener-0.1.1.vsix');
 const EXT_ID_PREFIX = 'taughtful.codebridge-opener-';
@@ -179,6 +219,7 @@ function collectTaggedFiles(tags) {
 }
 
 async function teach(dryRun, tags = []) {
+  const updateP = latestVersion();   // starts now, awaited (bounded) at the end
   const isFirst = firstRunNotice();
 
   // Exact chat when the harness exports the session id (`! codebridge`);
@@ -256,6 +297,7 @@ async function teach(dryRun, tags = []) {
     console.log(`  session: ${file}`);
     for (const s of fileSources) console.log(`  file:    ${s.title} (${s.chars.toLocaleString()} chars)`);
     console.log(`  starts:  ${text.trim().split('\n')[0].slice(0, 100)}`);
+    printUpdateNotice(await updateP);
     return 0;
   }
 
@@ -276,6 +318,7 @@ async function teach(dryRun, tags = []) {
   ]);
   deliver(`${WEB_BASE}/codebridge/${meta.id}`,
     `teaching ${scope}${fileSources.length ? ` + ${fileSources.length} file(s)` : ''}`);
+  printUpdateNotice(await updateP);
   return 0;
 }
 
@@ -298,8 +341,10 @@ async function ensureDaemon(announce) {
 }
 
 async function browse() {
+  const updateP = latestVersion();
   await ensureDaemon(true);
   deliver(`http://127.0.0.1:${PORT}`);
+  printUpdateNotice(await updateP);
   return 0;
 }
 
