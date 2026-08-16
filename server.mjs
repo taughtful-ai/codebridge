@@ -83,16 +83,31 @@ export function lastAssistant(file) {
     const u = userEntryText(entry);
     if (u) turns.push({ role: 'u', text: u });
   }
-  let lastUser = -1;
+  return pickAnchored(turns, CC_INVOKED_RE);
+}
+
+/* The selection rule, in the owner's words: teach the answer to the LAST REAL
+   USER MESSAGE — never anything a codebridge run itself produced. Walking the
+   turns backward: assistant entries are held as candidates; hitting a user
+   entry that IS a codebridge invocation discards the candidates gathered since
+   (they are that run's own output — runner chatter, the URL reply); hitting a
+   REAL user message locks the newest surviving candidate as the answer. This
+   makes back-to-back runs re-teach the same real answer instead of eating the
+   previous run's URL. */
+function pickAnchored(turns, invokedRe) {
+  let candidate = null;
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === 'u') { lastUser = i; break; }
+    const turn = turns[i];
+    if (turn.role === 'a') {
+      if (!candidate) candidate = turn;             // newest wins
+      continue;
+    }
+    // user entry:
+    if (invokedRe.test(turn.text)) { candidate = null; continue; }  // a codebridge run — its output is void
+    if (candidate) return { text: candidate.text, entry: candidate.entry };  // real message → its answer
+    // real user message with no answer after it (mid-turn read) → keep walking
   }
-  const cutoff = (lastUser >= 0 && CC_INVOKED_RE.test(turns[lastUser].text))
-    ? lastUser : turns.length;
-  for (let i = cutoff - 1; i >= 0; i--) {
-    if (turns[i].role === 'a') return { text: turns[i].text, entry: turns[i].entry };
-  }
-  return { text: '', entry: null };
+  return candidate ? { text: candidate.text, entry: candidate.entry } : { text: '', entry: null };
 }
 
 /* The invocation shapes a user entry can carry in a Claude Code transcript:
@@ -181,16 +196,7 @@ export function codexLastAssistant(file) {
       turns.push({ role: 'u', text: String(p.message) });
     }
   }
-  let lastUser = -1;
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === 'u') { lastUser = i; break; }
-  }
-  const cutoff = (lastUser >= 0 && /\bcodebridge\b/i.test(turns[lastUser].text))
-    ? lastUser : turns.length;
-  for (let i = cutoff - 1; i >= 0; i--) {
-    if (turns[i].role === 'a') return { text: turns[i].text, entry: turns[i].entry };
-  }
-  return { text: '', entry: null };
+  return pickAnchored(turns, /\bcodebridge\b/i);
 }
 
 /* Recent rollout files, newest first. Date-named dirs sort lexically =
