@@ -321,9 +321,20 @@ function scanClaudeSessions(limit) {
    layer up where the two-tier doc machinery already handles size). */
 export async function ingestToTaughtful(sources) {
   const fd = new FormData();
-  fd.append('manifest', JSON.stringify(
-    sources.map(({ text, title }) => ({ type: 'text', text, title })),
-  ));
+  // Mixed sources, order preserved: {text,title} ride the manifest as text;
+  // {file,title} become multipart file parts ({type:'file',field:'fileN'}) —
+  // the server routes them by filename/magic to its rich paths (PDF structure
+  // detection, MarkItDown for office/ebook, Gemini vision for images/scans).
+  let fileN = 0;
+  const manifest = sources.map((s) => {
+    if (s.file) {
+      const field = `file${fileN++}`;
+      fd.append(field, new Blob([fs.readFileSync(s.file)]), s.title);
+      return { type: 'file', field };
+    }
+    return { type: 'text', text: s.text, title: s.title };
+  });
+  fd.append('manifest', JSON.stringify(manifest));
   const res = await fetch(API_BASE + '/api/docs/ingest-multi', { method: 'POST', body: fd });
   if (!res.ok) {
     let detail = '';

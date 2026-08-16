@@ -72,10 +72,13 @@ The tutor teaches them alongside the answer, each as its own section:
 ! codebridge @src/auth.js @docs/design.md
 ```
 
-You pick the files; nothing is auto-included. A char/context meter prints as
-each file resolves; secrets (`.env`, keys, credentials) are refused, binaries
-skipped, and a mistyped path aborts the run instead of teaching partial
-context.
+You pick the files; nothing is auto-included. Code and text show a char/context
+meter; PDFs, Office docs, ebooks, and images (photos of notes, screenshots,
+diagrams) ride to the same rich ingestion Docs mode uses — structure detection
+for PDFs, vision transcription for images and scans. Secrets (`.env`, keys,
+credentials) are refused, unsupported binaries skipped, and a mistyped path
+aborts the run instead of teaching partial context. Runs under 200 words with
+nothing tagged are declined, with a hint to tag the part worth teaching.
 
 ## In your IDE
 

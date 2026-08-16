@@ -1,6 +1,6 @@
 {
   "name": "@taughtful/codebridge",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Your coding agent's answers, taught out loud. One command turns the last thing Claude Code or Codex said into a live voice lesson on Taughtful.",
   "keywords": [
     "claude-code",

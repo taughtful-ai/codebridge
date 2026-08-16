@@ -186,6 +186,13 @@ function looksBinary(buf) {
   return buf.subarray(0, 8192).includes(0);
 }
 
+/* Everything Docs mode ingests server-side rides as a FILE source: the server
+   picks the path by extension/magic (PDF bookmarks, MarkItDown, vision OCR
+   for images and scans). Code/text stays a text source with the char meter. */
+const RICH_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.html', '.htm',
+  '.epub', '.csv', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.heif']);
+const RICH_FILE_CAP = 50 * 1024 * 1024;   // per file; server batch cap is 200MB
+
 /* Resolve @-tagged paths → [{text, title, chars}]. Fail-fast on a missing
    path (a typo silently dropping context is worse than a re-run), loud-skip
    on sensitive/binary files. Prints the running meter as it goes. */
@@ -202,9 +209,20 @@ function collectTaggedFiles(tags) {
       console.log(`codebridge: @${tag} skipped — looks like credentials/secrets, not sending`);
       continue;
     }
+    const ext = path.extname(p).toLowerCase();
+    if (RICH_EXTS.has(ext)) {
+      const bytes = fs.statSync(p).size;
+      if (bytes > RICH_FILE_CAP) {
+        console.log(`codebridge: @${tag} — ${(bytes / 1e6).toFixed(0)}MB is over the 50MB per-file cap`);
+        return null;
+      }
+      console.log(`codebridge: + ${tag} (${(bytes / 1024).toFixed(0)} KB file, server-parsed)`);
+      out.push({ file: p, title: tag, chars: 0, rich: true });
+      continue;
+    }
     const buf = fs.readFileSync(p);
     if (looksBinary(buf)) {
-      console.log(`codebridge: @${tag} skipped — binary file`);
+      console.log(`codebridge: @${tag} skipped — unsupported binary (code/text/docs/images/pdf all work)`);
       continue;
     }
     const text = buf.toString('utf8');
@@ -302,8 +320,9 @@ async function teach(dryRun, tags = []) {
   // re-run with @file — agent-curated lessons via the tagging door.
   const MIN_WORDS = parseInt(process.env.CODEBRIDGE_MIN_WORDS || '200', 10);
   const words = (s) => String(s).split(/\s+/).filter(Boolean).length;
-  const totalWords = words(text) + fileSources.reduce((n, s) => n + words(s.text), 0);
-  if (totalWords < MIN_WORDS) {
+  const totalWords = words(text) + fileSources.reduce((n, s) => n + (s.rich ? 0 : words(s.text)), 0);
+  const hasRich = fileSources.some((s) => s.rich);
+  if (!hasRich && totalWords < MIN_WORDS) {
     console.log(`codebridge: too little to teach — ${totalWords} words selected (floor: ${MIN_WORDS})`);
     console.log('codebridge: (agent: ask your human which part or topic they want taught, '
       + 'write that content to a file, then run: codebridge @that-file)');
@@ -316,7 +335,7 @@ async function teach(dryRun, tags = []) {
     console.log(`would teach ${scope}: ${title} (${text.length.toLocaleString()} chars`
       + (fileSources.length ? ` + ${fileSources.length} file(s), ${fchars.toLocaleString()} chars — ~${ktok}k tokens total)` : ')'));
     console.log(`  session: ${file}`);
-    for (const s of fileSources) console.log(`  file:    ${s.title} (${s.chars.toLocaleString()} chars)`);
+    for (const s of fileSources) console.log(s.rich ? `  file:    ${s.title} (server-parsed)` : `  file:    ${s.title} (${s.chars.toLocaleString()} chars)`);
     console.log(`  starts:  ${text.trim().split('\n')[0].slice(0, 100)}`);
     printUpdateNotice(await updateP);
     return 0;
