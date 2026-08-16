@@ -57,9 +57,15 @@ async function latestVersion() {
 
 function printUpdateNotice(latest) {
   if (!latest || !newerThan(latest, PKG_VERSION)) return;
-  const line = `codebridge: NEW UPDATE v${latest} available (you run v${PKG_VERSION}) — `
-    + 'human: npm i -g @taughtful/codebridge · agent: you may run that update for your human';
-  console.log(process.stdout.isTTY ? `\x1b[38;5;115m${line}\x1b[0m` : line);
+  // Three short scannable lines, one per reader. Mint on real TTYs; plain in
+  // captured output (bang mode) so no escape codes land in transcripts.
+  const rows = [
+    `codebridge: NEW UPDATE v${latest} (you run v${PKG_VERSION})`,
+    '  human → npm i -g @taughtful/codebridge',
+    '  agent → run that update for your human',
+  ];
+  const tty = process.stdout.isTTY;
+  for (const row of rows) console.log(tty ? `\x1b[38;5;115m${row}\x1b[0m` : row);
 }
 
 const FIRSTRUN_MARK = path.join(os.homedir(), '.codebridge-firstrun');
